@@ -115,6 +115,7 @@ def gather_constituent_files():
         #     df.to_pickle(f'data/constituents_{dir}_v2.pickle')
 
 import difflib
+from difflib import SequenceMatcher
 
 def link_etfg_permno():
     wrds = WRDS('fehouse')
@@ -156,7 +157,20 @@ def link_etfg_permno():
         except Exception as e:
             log(e)
 
-    return name_mapping
+    name_mapping = pd.Series(name_mapping)
+    name_mapping.index.name = 'etfg_name'
+    name_mapping = name_mapping.to_frame(name='crsp_name').reset_index()
+    name_mapping['match1'] = np.nan
+    name_mapping['match2'] = np.nan
+    name_mapping['etfg_name2'] = name_mapping['etfg_name'].str[:10]
+    name_mapping['crsp_name2'] = name_mapping['crsp_name'].str[:10]
+    for i in name_mapping.index:
+        print(f"{i}/{len(name_mapping)}: {name_mapping.loc[i, 'etfg_name']}")
+        name_mapping.loc[i, 'match1'] = SequenceMatcher(None, name_mapping.loc[i, 'etfg_name'], name_mapping.loc[i, 'crsp_name']).ratio()
+        name_mapping.loc[i, 'match2'] = SequenceMatcher(None, name_mapping.loc[i, 'crsp_name'], name_mapping.loc[i, 'etfg_name']).ratio()
+        name_mapping.loc[i, 'match3'] = SequenceMatcher(None, name_mapping.loc[i, 'crsp_name'], name_mapping.loc[i, 'etfg_name']).ratio()
+
+    name_mapping.to_pickle('data/name_mapping.pickle')
 
 
 import json
@@ -165,12 +179,9 @@ import json
 if __name__ == '__main__':
     # name_list = gather_constituent_files()
     # name_list = list(set(name_list))
-    name_mapping = link_etfg_permno()
+    link_etfg_permno()
 
     # wrds = WRDS('fehouse')
     # # wrds.download_table('crsp', 'stocknames')
     #
-
-    with open("name_mapping.json", 'w') as f:
-        json.dump(name_mapping, f)
 
