@@ -9,8 +9,8 @@ import pyanomaly as pa
 from pyanomaly.globals import *
 from pyanomaly.wrdsdata import WRDS
 
-# DIR = './etfg/'
-DIR = 'E:/etfg/'
+DIR = './etfg/'
+# DIR = 'E:/etfg/'
 DIR_CONSTITUENTS = DIR + 'constituents_us/'
 DIR_INDUSTRY = DIR + 'industry_us/'
 DIR_FUNDFLOW = DIR + 'fundflow_us/'
@@ -240,9 +240,9 @@ def process_constituent_files1(sdate=None, edate=None):
     v_cleanse_ticker = np.vectorize(cleanse_ticker)
 
     columns1 = [
+        'cusip',
         'ticker',
         'name',
-        'cusip',
         'country',
         'exchange',
         'asset_class',
@@ -265,45 +265,37 @@ def process_constituent_files1(sdate=None, edate=None):
         df1.loc[df1.ticker == '', 'ticker'] = None
         df1['cusip'] = df1['cusip'].str[:8]
         df1['name'] = df1['name'].str.lower()
-        df1 = df1.groupby(['cusip', 'ticker', 'name'], as_index=False, dropna=False).last()
-        print(df1.shape)
-        df2 = []
-        for k, g in df1.groupby('cusip', dropna=False):
-            if (k is not None) and len(g) > 1:
-                if len(g['name'].unique()) > 1:
-                    g['name'] = g['name'].sort_values().iloc[0]
-                n = g['ticker'].isna().sum()
-                if (n > 0) and (n < len(g)):
-                    g.loc[g['ticker'].isna(), 'ticker'] = g['ticker'].sort_values().iloc[0]
+        log(f'Data size before dropping duplicates: {df1.shape}')
+        is_cusip_null = df1['cusip'].isna()
+        df2 = df1[~is_cusip_null].drop_duplicates(['cusip'], keep='last')
+        df3 = df1[is_cusip_null].drop_duplicates(columns1[1:-1], keep='last')
+        df1 = pd.concat([df2, df3])
+        log(f'Data size after dropping duplicates: {df1.shape}')
 
-            df2.append(g)
-
-        df1 = pd.concat(df2)
-        print(df1.shape)
-        df2 = []
-        for k, g in df1.groupby(['ticker', 'name']):
-            if (k[0] is not None) and (k[1] is not None) and len(g) > 1:
-                n = g['cusip'].isna().sum()
-                print(n, len(g))
-                if (n > 0) and (n < len(g)):
-                    g.loc[g['cusip'].isna(), 'cusip'] = g['cusip'].sort_values().iloc[0]
-
-            df2.append(g)
-
-        df2.append(df1[df1['ticker'].isna() | df1['name'].isna()])
-        df1 = pd.concat(df2)
-        print(df1.shape)
+        # df2 = []
+        # for k, g in df1.groupby('cusip', dropna=False):
+        #     if (k is not None) and len(g) > 1:
+        #         if len(g['name'].unique()) > 1:
+        #             g['name'] = g['name'].sort_values().iloc[0]
+        #         n = g['ticker'].isna().sum()
+        #         if (n > 0) and (n < len(g)):
+        #             g.loc[g['ticker'].isna(), 'ticker'] = g['ticker'].sort_values().iloc[0]
+        #
+        #     df2.append(g)
+        #
+        # df1 = pd.concat(df2)
 
         if securities is None:
             securities = df1
         else:
             securities = pd.concat([securities, df1])
         securities = securities.groupby(['cusip', 'ticker', 'name'], as_index=False, dropna=False).last()
+        is_cusip_null = securities['cusip'].isna()
+        df2 = securities[~is_cusip_null].drop_duplicates(['cusip'], keep='last')
+        df3 = securities[is_cusip_null].drop_duplicates(columns1[1:-1], keep='last')
+        securities = pd.concat([df2, df3])
+        log(f'securities size: {securities.shape}')
 
-        # securities.append(df1)
-
-    # securities = pd.concat(securities)
-    # securities = securities.groupby(['cusip', 'ticker', 'name'], as_index=False, dropna=False).last()
     securities = securities.rename(columns={'date': 'last_date'})
     securities['null_cusip'] = securities['cusip'].isna()
     n = 0
@@ -482,12 +474,7 @@ A CUSIP such as 12399099 or 12345699 is assigned by CRSP, and an identifier such
 if __name__ == '__main__':
     # df = process_profile_files()
     # df = process_fundflow_files()
-    sec = process_constituent_files1('2017-01-01', '2017-01-10')
-    sec2 = sec.copy()
-    sec['ticker'] = sec.ticker.str.split(expand=True)[0]
-    sec['ticker'] = sec.ticker.str.strip('*0123456789')
-    sec.loc[sec.ticker.str.isdecimal(), 'ticker'] = None
-    sec = sec2.copy()
+    sec = process_constituent_files1('2021-01-01', '2021-01-10')
 
     # process_constituent_files2('2017-01-01', '2017-01-10')
     # profile = read_profile('2021-12-31')
