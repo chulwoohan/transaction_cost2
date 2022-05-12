@@ -363,7 +363,6 @@ def process_constituent_files2(sdate=None, edate=None):
     securities = pd.read_pickle('data/securities.pickle')
     securities.rename(columns={'cusip': 'cusip2'}, inplace=True)
     holdings = []
-    year = dates[0][:4]
     for date in dates:
         print(date)
         # if date[:4] != year:
@@ -401,7 +400,7 @@ def process_constituent_files2(sdate=None, edate=None):
     holdings = pd.concat(holdings)
     holdings['date'] = pd.to_datetime(holdings['date'])
     holdings = holdings.sort_values(['composite_ticker', 'date'])
-    holdings.to_pickle(f'data/holdings_{year}.pickle')
+    holdings.to_pickle(f'data/holdings.pickle')
 
 
 def create_name_map():
@@ -509,9 +508,21 @@ if __name__ == '__main__':
     # df = process_fundflow_files()
     # process_constituent_files2()
 
-    wrds = WRDS('fehouse')
-    stocknames = wrds.read_data('stocknames')
-    sec = pd.read_pickle('./data/securities.pickle')
+    # wrds = WRDS('fehouse')
+    # stocknames = wrds.read_data('stocknames')
+    # sec = pd.read_pickle('./data/securities.pickle')
+
+    df = pd.read_pickle('data/holdings.pickle')
+    df[df.date.dt.year==2012].to_pickle('date/holdings_2012.pickle')
+    df[df.date.dt.year==2013].to_pickle('date/holdings_2013.pickle')
+    df[df.date.dt.year==2014].to_pickle('date/holdings_2014.pickle')
+    df[df.date.dt.year==2015].to_pickle('date/holdings_2015.pickle')
+    df[df.date.dt.year==2016].to_pickle('date/holdings_2016.pickle')
+    df[df.date.dt.year==2017].to_pickle('date/holdings_2017.pickle')
+    df[df.date.dt.year==2018].to_pickle('date/holdings_2018.pickle')
+    df[df.date.dt.year==2019].to_pickle('date/holdings_2019.pickle')
+    df[df.date.dt.year==2020].to_pickle('date/holdings_2020.pickle')
+    df[df.date.dt.year==2021].to_pickle('date/holdings_2021.pickle')
 
     # process_constituent_files2('2017-01-01', '2017-01-10')
     # profile = read_profile('2021-12-31')
