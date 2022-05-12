@@ -9,8 +9,8 @@ import pyanomaly as pa
 from pyanomaly.globals import *
 from pyanomaly.wrdsdata import WRDS
 
-DIR = './etfg/'
-# DIR = 'E:/etfg/'
+# DIR = './etfg/'
+DIR = 'E:/etfg/'
 DIR_CONSTITUENTS = DIR + 'constituents_us/'
 DIR_INDUSTRY = DIR + 'industry_us/'
 DIR_FUNDFLOW = DIR + 'fundflow_us/'
@@ -221,24 +221,26 @@ def process_fundflow_files(sdate=None, edate=None):
     return df
 
 
+def cleanse_ticker(ticker):
+    if ticker is None:
+        return ''
+    if isinstance(ticker, float):
+        return ''
+    ticker = ticker.strip('*')
+    if not ticker.isalpha():
+        return ''
+    ticker = ticker.split()[0][:5]
+    if ticker.isdecimal():
+        return ''
+    return ticker
+
+
+v_cleanse_ticker = np.vectorize(cleanse_ticker)
+
+
 def process_constituent_files1(sdate=None, edate=None):
     """
     """
-    def cleanse_ticker(ticker):
-        if ticker is None:
-            return ''
-        if isinstance(ticker, float):
-            return ''
-        ticker = ticker.strip('*')
-        if not ticker.isalpha():
-            return ''
-        ticker = ticker.split()[0][:5]
-        if ticker.isdecimal():
-            return ''
-        return ticker
-
-    v_cleanse_ticker = np.vectorize(cleanse_ticker)
-
     columns1 = [
         'cusip',
         'ticker',
@@ -266,6 +268,7 @@ def process_constituent_files1(sdate=None, edate=None):
         df1['cusip'] = df1['cusip'].str[:8]
         df1['name'] = df1['name'].str.lower()
         log(f'Data size before dropping duplicates: {df1.shape}')
+# 2      2012-01-03             AMLP    SXL             sunoco logistics partners lp   0.030           NaN   NaN           NaN           NaN      NaN           NaN     NaN          NaN         NaN           NaN    NaN
         is_cusip_null = df1['cusip'].isna()
         df2 = df1[~is_cusip_null].drop_duplicates(['cusip'], keep='last')
         df3 = df1[is_cusip_null].drop_duplicates(columns1[1:-1], keep='last')
@@ -289,19 +292,34 @@ def process_constituent_files1(sdate=None, edate=None):
             securities = df1
         else:
             securities = pd.concat([securities, df1])
-        securities = securities.groupby(['cusip', 'ticker', 'name'], as_index=False, dropna=False).last()
+        # securities = securities.groupby(['cusip', 'ticker', 'name'], as_index=False, dropna=False).last()
         is_cusip_null = securities['cusip'].isna()
         df2 = securities[~is_cusip_null].drop_duplicates(['cusip'], keep='last')
         df3 = securities[is_cusip_null].drop_duplicates(columns1[1:-1], keep='last')
         securities = pd.concat([df2, df3])
         log(f'securities size: {securities.shape}')
 
+    securities.sort_values('cusip', inplace=True)
+    securities = securities.drop_duplicates(columns1[1:-1], keep='first')
+    # df2 = []
+    # for k, g in df1.groupby(['ticker', 'name']):
+    #     if (k[0] is not None) and (k[1] is not None) and len(g) > 1:
+    #         n = g['cusip'].isna().sum()
+    #         print(n, len(g))
+    #         if (n > 0) and (n < len(g)):
+    #             g.loc[g['cusip'].isna(), 'cusip'] = g['cusip'].sort_values().iloc[0]
+    #
+    #     df2.append(g)
+    #
+    # df2.append(df1[df1['ticker'].isna() | df1['name'].isna()])
+    # df1 = pd.concat(df2)
     securities = securities.rename(columns={'date': 'last_date'})
+    securities.reset_index(drop=True, inplace=True)
     securities['null_cusip'] = securities['cusip'].isna()
     n = 0
     for idx in securities.index:
         if securities.loc[idx, 'null_cusip']:
-            cusip = f'XX{100000 + n}'
+            cusip = f'{1000000 + n}X'
             securities.loc[idx, 'cusip'] = cusip
             n += 1
 
@@ -345,29 +363,45 @@ def process_constituent_files2(sdate=None, edate=None):
     securities = pd.read_pickle('data/securities.pickle')
     securities.rename(columns={'cusip': 'cusip2'}, inplace=True)
     holdings = []
+    year = dates[0][:4]
     for date in dates:
         print(date)
+        # if date[:4] != year:
+        #     holdings = pd.concat(holdings)
+        #     holdings['date'] = pd.to_datetime(holdings['date'])
+        #     holdings = holdings.sort_values(['composite_ticker', 'date'])
+        #     holdings.to_pickle(f'data/holdings_{year}.pickle')
+        #     holdings = []
+        #     year = date[:4]
+
         try:
             df = read_constituents_file(date)
         except Exception as e:
             print(e)
             continue
 
-        l1 = len(df)
-        df = df.merge(securities[['ticker', 'name', 'cusip2']], on=['ticker', 'name'], how='left')
-        if l1 != len(df):
-            print(l1, len(df))
+        df['ticker'] = v_cleanse_ticker(df['ticker'])
+        df.loc[df.ticker == '', 'ticker'] = None
+        df['cusip'] = df['cusip'].str[:8]
+        df['name'] = df['name'].str.lower()
 
-        df['cusip'] = df['cusip'].fillna(df['cusip2'])
-        df2 = df[columns2]
+        is_cusip_null = df['cusip'].isna()
+        df1 = df[is_cusip_null]
+        l1 = len(df1)
+        df1 = df1.merge(securities[['cusip2', 'ticker', 'name', 'country', 'exchange', 'asset_class', 'security_type']],
+                      on=['ticker', 'name', 'country', 'exchange', 'asset_class', 'security_type'], how='left')
+        if l1 != len(df1):
+            print(l1, len(df1))
+
+        df1['cusip'] = df1['cusip2']
+        df2 = pd.concat([df.loc[~is_cusip_null, columns2], df1[columns2]])
+        print('null cusip: ', df2.cusip.isna().sum())
         holdings.append(df2)
 
     holdings = pd.concat(holdings)
     holdings['date'] = pd.to_datetime(holdings['date'])
     holdings = holdings.sort_values(['composite_ticker', 'date'])
-    print('null cusip: ', holdings.cusip.isna().sum())
-
-    holdings.to_pickle(f'data/holdings.pickle')
+    holdings.to_pickle(f'data/holdings_{year}.pickle')
 
 
 def create_name_map():
@@ -449,32 +483,35 @@ A CUSIP such as 12399099 or 12345699 is assigned by CRSP, and an identifier such
     """
     wrds = WRDS('fehouse')
     stocknames = wrds.read_data('stocknames')
-    holdings = pd.read_pickle('./data/constituents_2018_v2.pickle')
+    securities = pd.read_pickle('./data/securities.pickle')
 
-    print(holdings.shape)
     cusip = stocknames[['permno', 'cusip']].drop_duplicates()
     ncusip = stocknames[['permno', 'ncusip']].drop_duplicates().rename({'ncusip': 'cusip'})
     cusip = pd.concat([cusip, ncusip]).drop_duplicates().dropna()
 
-    holdings = holdings.merge(cusip, on='cusip', how='left')
-    holdings.rename(columns={'permno': 'permno1'})
+    securities = securities.merge(cusip, on='cusip', how='left')
+    securities.rename(columns={'permno': 'permno1'})
     # holdings_mapped = holdings[~holdings['permno'].isna()]
 
     # holdings = holdings[holdings['permno'].isna()]
     ticker = stocknames[['permno', 'ticker', 'namedt', 'nameenddt']].drop_duplicates()
-    holdings = holdings.merge(ticker, on='ticker', how='left')
-    holdings = holdings[(holdings['date'] >= holdings['namedt']) & (holdings['date'] <= holdings['nameenddt'])]
+    securities = securities.merge(ticker, on='ticker', how='left')
+    securities = securities[(securities['date'] >= securities['namedt']) & (securities['date'] <= securities['nameenddt'])]
 
-    holdings_mapped = pd.concat([holdings_mapped, holdings[~holdings['permno'].isna()]])
+    holdings_mapped = pd.concat([holdings_mapped, securities[~securities['permno'].isna()]])
 
-    holdings = holdings[holdings['permno'].isna()]
+    securities = securities[securities['permno'].isna()]
 
 
 
 if __name__ == '__main__':
     # df = process_profile_files()
     # df = process_fundflow_files()
-    sec = process_constituent_files1('2021-01-01', '2021-01-10')
+    # process_constituent_files2()
+
+    wrds = WRDS('fehouse')
+    stocknames = wrds.read_data('stocknames')
+    sec = pd.read_pickle('./data/securities.pickle')
 
     # process_constituent_files2('2017-01-01', '2017-01-10')
     # profile = read_profile('2021-12-31')
