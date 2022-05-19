@@ -16,6 +16,8 @@ DIR_INDUSTRY = DIR + 'industry_us/'
 DIR_FUNDFLOW = DIR + 'fundflow_us/'
 DIR_V2_HEADER = DIR + 'v2_header_files/'
 DIR_LEGACY_HEADER = DIR + 'legacy_header_files/'
+DATA_DIR = './data/'
+EQUITY_DATA_DIR = './equity_data/'
 
 legacy_header_industry_map = {
     'etn': 'is_etn',
@@ -482,47 +484,76 @@ A CUSIP such as 12399099 or 12345699 is assigned by CRSP, and an identifier such
     """
     wrds = WRDS('fehouse')
     stocknames = wrds.read_data('stocknames')
-    securities = pd.read_pickle('./data/securities.pickle')
 
     cusip = stocknames[['permno', 'cusip']].drop_duplicates()
-    ncusip = stocknames[['permno', 'ncusip']].drop_duplicates().rename({'ncusip': 'cusip'})
+    ncusip = stocknames[['permno', 'ncusip']].drop_duplicates().rename(columns={'ncusip': 'cusip'})
     cusip = pd.concat([cusip, ncusip]).drop_duplicates().dropna()
 
-    securities = securities.merge(cusip, on='cusip', how='left')
-    securities.rename(columns={'permno': 'permno1'})
-    # holdings_mapped = holdings[~holdings['permno'].isna()]
+    sec = pd.read_pickle('./data/securities.pickle')
+    sec = sec.merge(cusip, on='cusip', how='left')
+    sec.to_pickle('./data/securities.pickle')
 
-    # holdings = holdings[holdings['permno'].isna()]
-    ticker = stocknames[['permno', 'ticker', 'namedt', 'nameenddt']].drop_duplicates()
-    securities = securities.merge(ticker, on='ticker', how='left')
-    securities = securities[(securities['date'] >= securities['namedt']) & (securities['date'] <= securities['nameenddt'])]
+    # securities.rename(columns={'permno': 'permno1'})
+    # # holdings_mapped = holdings[~holdings['permno'].isna()]
+    #
+    # # holdings = holdings[holdings['permno'].isna()]
+    # ticker = stocknames[['permno', 'ticker', 'namedt', 'nameenddt']].drop_duplicates()
+    # securities = securities.merge(ticker, on='ticker', how='left')
+    # securities = securities[(securities['date'] >= securities['namedt']) & (securities['date'] <= securities['nameenddt'])]
+    #
+    # holdings_mapped = pd.concat([holdings_mapped, securities[~securities['permno'].isna()]])
+    #
+    # securities = securities[securities['permno'].isna()]
 
-    holdings_mapped = pd.concat([holdings_mapped, securities[~securities['permno'].isna()]])
+    years = [2017, 2018, 2019, 2020, 2021]
+    for year in years:
+        fpath = f'./data/holdings_{year}.pickle'
+        holdings = pd.read_pickle(fpath)
+        holdings = holdings.merge(cusip, on='cusip', how='left')
+        holdings.to_pickle(fpath)
 
-    securities = securities[securities['permno'].isna()]
+def get_db_info():
+    profile = pd.read_pickle('./data/profile.pickle')
+    log(f'num etfs = {profile.shape[0]}')
+
+    profile = profile[profile.asset_class == 'Equity']
+    log(f'num equity etfs = {profile.shape[0]}')
 
 
+def generate_equity_etf_data():
+    profile = pd.read_pickle(DATA_DIR + 'profile.pickle')
+    profile = profile[profile.asset_class == 'Equity']
+    profile = profile[profile.is_etn.isin(['f', 0])]
+    profile = profile.reset_index()
+    profile.to_pickle(EQUITY_DATA_DIR + 'profile.pickle')
+
+    flow = pd.read_pickle(DATA_DIR + 'fundflow.pickle')
+    flow = flow[flow.ticker.isin(profile.ticker)]
+    flow.to_pickle(EQUITY_DATA_DIR + 'fundflow.pickle')
+
+    years = [2017, 2018, 2019, 2020, 2021]
+    for year in years:
+        file = f'holdings_{year}.pickle'
+        holdings = pd.read_pickle(DATA_DIR + file)
+        holdings = holdings[holdings.composite_ticker.isin(profile.ticker)]
+        holdings.to_pickle(EQUITY_DATA_DIR + file)
 
 if __name__ == '__main__':
     # df = process_profile_files()
     # df = process_fundflow_files()
     # process_constituent_files2()
+    profile = pd.read_pickle(EQUITY_DATA_DIR + 'profile.pickle')
 
-    # wrds = WRDS('fehouse')
-    # stocknames = wrds.read_data('stocknames')
-    # sec = pd.read_pickle('./data/securities.pickle')
+    years = [2017]#, 2018, 2019, 2020, 2021]
+    for year in years:
+        log(f'year: {year}')
+        file = f'holdings_{year}.pickle'
+        holdings = pd.read_pickle(EQUITY_DATA_DIR + file)
+        log(f'num. etfs: {len(holdings.composite_ticker.unique())}')
 
-    df = pd.read_pickle('data/holdings.pickle')
-    df[df.date.dt.year==2012].to_pickle('data/holdings_2012.pickle')
-    df[df.date.dt.year==2013].to_pickle('data/holdings_2013.pickle')
-    df[df.date.dt.year==2014].to_pickle('data/holdings_2014.pickle')
-    df[df.date.dt.year==2015].to_pickle('data/holdings_2015.pickle')
-    df[df.date.dt.year==2016].to_pickle('data/holdings_2016.pickle')
-    df[df.date.dt.year==2017].to_pickle('data/holdings_2017.pickle')
-    df[df.date.dt.year==2018].to_pickle('data/holdings_2018.pickle')
-    df[df.date.dt.year==2019].to_pickle('data/holdings_2019.pickle')
-    df[df.date.dt.year==2020].to_pickle('data/holdings_2020.pickle')
-    df[df.date.dt.year==2021].to_pickle('data/holdings_2021.pickle')
+        holdings['market_value2'] = holdings['market_value']
+        holdings.loc[holdings.permno.isna(), 'market_value2'] = 0
+        market_value = holdings.groupby('composite_ticker')[['market_value', 'market_value2']].sum()
 
     # process_constituent_files2('2017-01-01', '2017-01-10')
     # profile = read_profile('2021-12-31')
